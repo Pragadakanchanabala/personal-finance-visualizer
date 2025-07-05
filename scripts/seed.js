@@ -1,5 +1,6 @@
 // scripts/seed.js
-
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 import mongoose from 'mongoose';
 import dbConnect from '../lib/dbConnect.js'; // Adjust path if necessary
 import Category from '../models/Category.js'; // Adjust path if necessary
