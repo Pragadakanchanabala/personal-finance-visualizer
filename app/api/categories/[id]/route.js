@@ -1,7 +1,6 @@
 // File Path: app/api/categories/[id]/route.js
 import { getServerSession } from 'next-auth/next';
-// THE FIX: Corrected relative path to go up two levels
-import { authOptions } from '../../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth'; // Corrected import path
 import dbConnect from '../../../../lib/dbConnect';
 import Category from '../../../../models/Category';
 import { NextResponse } from 'next/server';
@@ -28,6 +27,4 @@ export async function DELETE(request, { params }) {
     if (!deletedCategory) return NextResponse.json({ success: false, message: 'Category not found.' }, { status: 404 });
     return NextResponse.json({ success: true, message: 'Category deleted successfully.' });
 }
-
-    
 
