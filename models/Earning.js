@@ -26,7 +26,7 @@ const EarningSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// Ensures a user can only have one earning entry per month/year
 EarningSchema.index({ month: 1, year: 1, userId: 1 }, { unique: true });
 
 export default mongoose.models.Earning || mongoose.model('Earning', EarningSchema);
+

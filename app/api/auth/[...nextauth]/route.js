@@ -4,7 +4,7 @@ import GoogleProvider from 'next-auth/providers/google';
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
 import clientPromise from "@/lib/mongodb";
 
-// The authOptions are now defined directly in this file.
+// All auth options are consolidated here to prevent Vercel build errors.
 export const authOptions = {
   adapter: MongoDBAdapter(clientPromise),
   providers: [
@@ -29,6 +29,5 @@ export const authOptions = {
 
 const handler = NextAuth(authOptions);
 
-// The handler is exported for Next.js to use.
 export { handler as GET, handler as POST };
 
