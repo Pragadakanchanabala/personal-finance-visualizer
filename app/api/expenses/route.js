@@ -17,6 +17,7 @@ export async function GET(request) {
     return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
   }
   await dbConnect();
+  
   try {
     const expenses = await Expense.find({ userId: session.user.id }).populate('categoryId');
     return NextResponse.json({ success: true, data: expenses });
@@ -41,7 +42,3 @@ export async function POST(request) {
     return NextResponse.json({ success: false, message: 'Failed to create expense.' }, { status: 400 });
   }
 }
-
-   
-    
-

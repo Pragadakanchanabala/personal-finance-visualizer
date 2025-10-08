@@ -1,6 +1,6 @@
 // File Path: app/api/budgets/route.js
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
+import { authOptions } from '../auth/[...nextauth]/route'; // Corrected import path
 import dbConnect from '../../../lib/dbConnect';
 import Budget from '../../../models/Budget';
 import { NextResponse } from 'next/server';

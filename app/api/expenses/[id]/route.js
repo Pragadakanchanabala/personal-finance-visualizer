@@ -1,14 +1,15 @@
-// app/api/expenses/[id]/route.js
+// File Path: app/api/expenses/[id]/route.js
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
+import { authOptions } from '../auth/[...nextauth]/route'; // Correct import path
 import dbConnect from '../../../../lib/dbConnect';
-import Expense from '../../../../models/Expense'; // Changed from Transaction
+import Expense from '../../../../models/Expense';
 import { NextResponse } from 'next/server';
 
 async function getSession() {
   return await getServerSession(authOptions);
 }
 
+// PUT handler to update an expense
 export async function PUT(request, { params }) {
   const session = await getSession();
   if (!session?.user?.id) {
@@ -31,6 +32,7 @@ export async function PUT(request, { params }) {
   }
 }
 
+// DELETE handler to delete an expense
 export async function DELETE(request, { params }) {
   const session = await getSession();
   if (!session?.user?.id) {
@@ -47,3 +49,4 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ success: false, message: 'Failed to delete expense.' }, { status: 400 });
   }
 }
+
