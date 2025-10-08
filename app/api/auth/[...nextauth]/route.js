@@ -1,11 +1,11 @@
-// app\api\auth\[...nextauth]\route.js
-
+// File Path: app/api/auth/[...nextauth]/route.js
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
-import clientPromise from "@/lib/mongodb"; // We'll create this file next
+import clientPromise from "@/lib/mongodb";
 
-const authOptions = {
+// The authOptions are now defined directly in this file.
+export const authOptions = {
   adapter: MongoDBAdapter(clientPromise),
   providers: [
     GoogleProvider({
@@ -17,10 +17,9 @@ const authOptions = {
     strategy: "jwt",
   },
   callbacks: {
-    // This callback adds the user's ID to the session object
     async session({ session, token }) {
       if (token) {
-        session.user.id = token.sub; // `sub` is the user's ID from the provider
+        session.user.id = token.sub;
       }
       return session;
     },
@@ -30,4 +29,6 @@ const authOptions = {
 
 const handler = NextAuth(authOptions);
 
+// The handler is exported for Next.js to use.
 export { handler as GET, handler as POST };
+

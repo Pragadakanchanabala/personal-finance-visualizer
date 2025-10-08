@@ -1,0 +1,45 @@
+feat: Implement multi-user auth and major dashboard enhancements
+
+This commit introduces a complete multi-user authentication system and significantly upgrades the dashboard's features and UI.
+
+Key Features & Changes:
+
+Multi-User Authentication:
+
+Integrated NextAuth.js with the Google Provider for secure sign-in and session management.
+
+All private data (Expenses, Budgets, Earnings) is now linked to a specific userId.
+
+API routes are fully secured to ensure users can only access and modify their own data.
+
+Shared Categories Model:
+
+Categories are now global and shared between all users.
+
+A seed.js script has been added to populate the database with a default set of common categories.
+
+Monthly Earnings & Budgeting Intelligence:
+
+Users can now set their earnings for each month.
+
+The "Set Budget" modal intelligently calculates the total budget for the selected month and displays a warning if it exceeds the user's earnings.
+
+Dynamic Monthly Dashboard:
+
+Added month and year selectors to the dashboard.
+
+All charts (Pie Chart, Budget vs. Actual) and the "Monthly Snapshot" card now dynamically update to reflect the selected time period.
+
+The snapshot provides a clear summary of savings or overspending.
+
+UI/UX Overhaul:
+
+Renamed "Transactions" to "Expenses" throughout the application for better clarity.
+
+Implemented a more attractive UI with a soft, blurred background image and a cleaner, card-based layout.
+
+Redesigned the "Monthly Snapshot" with icons and color-coded indicators for a more intuitive user experience.
+
+Bug Fixes:
+
+Resolved numerous issues related to data fetching, rendering, and form submissions to ensure a smooth user experience.
