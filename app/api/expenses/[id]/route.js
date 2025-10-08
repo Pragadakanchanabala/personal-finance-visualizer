@@ -4,6 +4,8 @@ import dbConnect from '../../../../lib/dbConnect';
 import Expense from '../../../../models/Expense';
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function PUT(request, { params }) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
