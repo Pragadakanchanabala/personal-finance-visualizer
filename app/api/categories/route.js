@@ -1,6 +1,6 @@
 // File Path: app/api/categories/route.js
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
+import { authOptions } from '../auth/[...nextauth]/route'; // Correct import path
 import dbConnect from '../../../lib/dbConnect';
 import Category from '../../../models/Category';
 import { NextResponse } from 'next/server';
