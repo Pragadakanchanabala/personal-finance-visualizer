@@ -5,15 +5,17 @@ const CategorySchema = new mongoose.Schema({
   name: {
     type: String,
     required: [true, 'Category name is required.'],
-    unique: true,
+    unique: true, // Name must be unique across all users
     trim: true,
   },
-  color: { // Optional: for visual distinction in charts/UI
+  color: {
     type: String,
-    default: '#8884d8', // Default color
+    default: '#8884d8',
   },
+  // REMOVED: No more userId. Categories are now global.
 }, {
   timestamps: true,
 });
 
 export default mongoose.models.Category || mongoose.model('Category', CategorySchema);
+

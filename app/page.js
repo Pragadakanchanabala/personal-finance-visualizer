@@ -1,7 +1,8 @@
 // app/page.js
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useSession, signIn, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,744 +10,234 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { format, parseISO, getMonth, getYear } from 'date-fns';
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, TrendingUp, TrendingDown, Wallet, Landmark, PiggyBank, AlertTriangle } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Progress } from "@/components/ui/progress"; // For budget progress bar
+import { Progress } from "@/components/ui/progress";
 
-// --- START: Added for Category Shortcuts ---
-// Mapping of full category names to their shortcuts
 const categoryShortcuts = {
-  'Groceries': 'Gro',
-  'Utilities': 'Uti',
-  'Rent': 'Ren',
-  'Entertainment': 'Ent',
-  'Transport': 'Tra',
-  'Dining Out': 'Din',
-  'Healthcare': 'Hea',
-  'Salary': 'Sal',
-  'Miscellaneous': 'Mis',
-  'Uncategorized': 'Unc',
+  'Groceries': 'Gro', 'Utilities': 'Uti', 'Rent': 'Ren', 'Entertainment': 'Ent',
+  'Transport': 'Tra', 'Dining Out': 'Din', 'Healthcare': 'Hea', 'Salary': 'Sal',
+  'Miscellaneous': 'Mis', 'Uncategorized': 'Unc',
 };
-
-// Function to format the category name for the axis and legends/tooltips
-const formatCategoryName = (name) => {
-  return categoryShortcuts[name] || name; // Returns shortcut if available, otherwise the original name
-};
-// --- END: Added for Category Shortcuts ---
+const formatCategoryName = (name) => categoryShortcuts[name] || name;
 
 export default function Home() {
-  const [transactions, setTransactions] = useState([]);
+  const { data: session, status } = useSession();
+
+  const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [budgets, setBudgets] = useState([]);
-  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+  const [earnings, setEarnings] = useState([]);
+
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
-  const [currentTransaction, setCurrentTransaction] = useState(null);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isEarningModalOpen, setIsEarningModalOpen] = useState(false);
+
+  const [currentExpense, setCurrentExpense] = useState(null);
   const [currentBudget, setCurrentBudget] = useState(null);
-  const [transactionForm, setTransactionForm] = useState({ amount: '', date: new Date(), description: '', categoryId: '' });
+  const [currentCategory, setCurrentCategory] = useState(null);
+
+  const [expenseForm, setExpenseForm] = useState({ amount: '', date: new Date(), description: '', categoryId: '' });
   const [budgetForm, setBudgetForm] = useState({ category: '', amount: '', month: getMonth(new Date()) + 1, year: getYear(new Date()) });
+  const [categoryForm, setCategoryForm] = useState({ name: '', color: '#8884d8' });
+  const [earningForm, setEarningForm] = useState({ amount: '', month: getMonth(new Date()) + 1, year: getYear(new Date()) });
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [budgetError, setBudgetError] = useState(null);
+
+  const [selectedDate, setSelectedDate] = useState({ month: getMonth(new Date()) + 1, year: getYear(new Date()) });
 
   const months = Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: format(new Date(0, i), 'MMMM') }));
-  const years = Array.from({ length: 5 }, (_, i) => getYear(new Date()) - 2 + i);
+  const years = Array.from({ length: getYear(new Date()) - 2023 }, (_, i) => getYear(new Date()) - i);
 
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    if (status === "authenticated") {
+      fetchAllData();
+    }
+  }, [status]);
 
   const fetchAllData = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const [transactionsRes, categoriesRes, budgetsRes] = await Promise.all([
-        fetch('/api/transactions'),
+      const [categoriesRes, expensesRes, budgetsRes, earningsRes] = await Promise.all([
         fetch('/api/categories'),
+        fetch('/api/expenses'),
         fetch('/api/budgets'),
+        fetch('/api/earnings'),
+      ]);
+      const [categoriesData, expensesData, budgetsData, earningsData] = await Promise.all([
+        categoriesRes.json(),
+        expensesRes.json(),
+        budgetsRes.json(),
+        earningsRes.json(),
       ]);
 
-      const transactionsData = await transactionsRes.json();
-      const categoriesData = await categoriesRes.json();
-      const budgetsData = await budgetsRes.json();
+      if (categoriesData.success) setCategories(categoriesData.data);
+      if (expensesData.success) setExpenses(expensesData.data.map(e => ({ ...e, categoryName: e.categoryId?.name || 'Uncategorized' })));
+      if (budgetsData.success) setBudgets(budgetsData.data);
+      if (earningsData.success) setEarnings(earningsData.data);
 
-      if (transactionsData.success && categoriesData.success && budgetsData.success) {
-        const transactionsWithCategoryNames = transactionsData.data.map(t => {
-          const foundCategory = categoriesData.data.find(c => c && c._id === t.categoryId);
-          return {
-            ...t,
-            categoryName: foundCategory ? foundCategory.name : 'Uncategorized'
-          };
-        });
-        setTransactions(transactionsWithCategoryNames);
-        setCategories(categoriesData.data);
-        setBudgets(budgetsData.data); // Budgets should now be correctly populated with category objects
-      } else {
-        setError(transactionsData.message || categoriesData.message || budgetsData.message || 'Failed to fetch data.');
-      }
+    } catch (err) {
+      setError('A network error occurred.');
     } finally {
       setLoading(false);
     }
   };
+  
+  const handleFormChange = (setter) => (e) => setter(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  const handleSelectChange = (setter, field) => (value) => setter(prev => ({ ...prev, [field]: value }));
+  const handleDateChange = (setter, field) => (date) => setter(prev => ({ ...prev, [field]: date }));
 
-  // --- Transaction Form Handlers ---
-  const handleTransactionChange = (e) => {
-    const { name, value } = e.target;
-    setTransactionForm(prev => ({ ...prev, [name]: value }));
+  const openAddEarningModal = () => {
+    const currentEarning = earnings.find(e => e.month === selectedDate.month && e.year === selectedDate.year);
+    setEarningForm({ amount: currentEarning?.amount || '', month: selectedDate.month, year: selectedDate.year });
+    setIsEarningModalOpen(true);
   };
-
-  const handleTransactionDateChange = (date) => {
-    setTransactionForm(prev => ({ ...prev, date }));
-  };
-
-  const handleTransactionCategoryChange = (value) => {
-    setTransactionForm(prev => ({ ...prev, categoryId: value }));
-  };
-
-  const handleTransactionSubmit = async (e) => {
-    e.preventDefault();
-    setError(null);
-
-    if (isNaN(parseFloat(transactionForm.amount)) || parseFloat(transactionForm.amount) <= 0) {
-      setError('Please enter a valid positive amount for the transaction.');
-      return;
-    }
-    if (!transactionForm.categoryId) {
-      setError('Please select a category for the transaction.');
-      return;
-    }
-
-    const dataToSend = {
-      ...transactionForm,
-      amount: parseFloat(transactionForm.amount),
-      date: transactionForm.date.toISOString(),
-    };
-
-    let res;
-    if (currentTransaction) {
-      res = await fetch(`/api/transactions/${currentTransaction._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSend),
-      });
-    } else {
-      res = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSend),
-      });
-    }
-
-    const data = await res.json();
-    if (data.success) {
-      fetchAllData();
-      setIsTransactionModalOpen(false);
-      setTransactionForm({ amount: '', date: new Date(), description: '', categoryId: '' });
-      setCurrentTransaction(null);
-    } else {
-      setError(data.message || 'Failed to save transaction.');
-    }
-  };
-
-  const handleEditTransaction = (transaction) => {
-    setCurrentTransaction(transaction);
-    setTransactionForm({
-      amount: transaction.amount,
-      date: parseISO(transaction.date),
-      description: transaction.description,
-      categoryId: transaction.categoryId,
-    });
-    setIsTransactionModalOpen(true);
-  };
-
-  const handleDeleteTransaction = async (id) => {
-    if (!confirm('Are you sure you want to delete this transaction?')) return;
-    setError(null);
-    try {
-      const res = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        fetchAllData();
-      } else {
-        setError(data.message || 'Failed to delete transaction.');
-      }
-    } catch (err) {
-      setError('Network error or server issue. ' + err.message);
-    }
-  };
-
-  const openAddTransactionModal = () => {
-    setCurrentTransaction(null);
-    setTransactionForm({ amount: '', date: new Date(), description: '', categoryId: '' });
-    setIsTransactionModalOpen(true);
-  };
-
-  const closeTransactionDialog = () => {
-    setIsTransactionModalOpen(false);
-    setError(null);
-  };
-
-  // --- Budget Form Handlers ---
-  const handleBudgetChange = (e) => {
-    const { name, value } = e.target;
-    setBudgetForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleBudgetCategoryChange = (value) => {
-    setBudgetForm(prev => ({ ...prev, category: value }));
-  };
-
-  const handleBudgetMonthChange = (value) => {
-    setBudgetForm(prev => ({ ...prev, month: parseInt(value) }));
-  };
-
-  const handleBudgetYearChange = (value) => {
-    setBudgetForm(prev => ({ ...prev, year: parseInt(value) }));
-  };
-
-  const handleBudgetSubmit = async (e) => {
-    e.preventDefault();
-    setBudgetError(null);
-
-    if (isNaN(parseFloat(budgetForm.amount)) || parseFloat(budgetForm.amount) < 0) {
-      setBudgetError('Please enter a valid non-negative amount for the budget.');
-      return;
-    }
-    if (!budgetForm.category) {
-      setBudgetError('Please select a category for the budget.');
-      return;
-    }
-
-    const dataToSend = {
-      ...budgetForm,
-      amount: parseFloat(budgetForm.amount),
-    };
-
-    let res;
-    if (currentBudget) {
-      res = await fetch(`/api/budgets/${currentBudget._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSend),
-      });
-    } else {
-      res = await fetch('/api/budgets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSend),
-      });
-    }
-
-    const data = await res.json();
-    if (data.success) {
-      fetchAllData();
-      setIsBudgetModalOpen(false);
-      setBudgetForm({ category: '', amount: '', month: getMonth(new Date()) + 1, year: getYear(new Date()) });
-      setCurrentBudget(null);
-    } else {
-      setBudgetError(data.message || 'Failed to save budget.');
-    }
-  };
-
-  const handleEditBudget = (budget) => {
-    setCurrentBudget(budget);
-    setBudgetForm({
-      // FIX: Access budget.category._id as the backend populates 'category'
-      category: budget.category && typeof budget.category === 'object' ? budget.category._id : '',
-      amount: budget.amount,
-      month: budget.month,
-      year: budget.year,
-    });
-    setIsBudgetModalOpen(true);
-  };
-
-  const handleDeleteBudget = async (id) => {
-    if (!confirm('Are you sure you want to delete this budget?')) return;
-    setBudgetError(null);
-    try {
-      const res = await fetch(`/api/budgets/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        fetchAllData();
-      } else {
-        setBudgetError(data.message || 'Failed to delete budget.');
-      }
-    } catch (err) {
-      setBudgetError('Network error or server issue. ' + err.message);
-    }
+  
+  const openAddExpenseModal = () => {
+    setCurrentExpense(null);
+    setExpenseForm({ amount: '', date: new Date(), description: '', categoryId: '' });
+    setIsExpenseModalOpen(true);
   };
 
   const openAddBudgetModal = () => {
     setCurrentBudget(null);
-    setBudgetForm({ category: '', amount: '', month: getMonth(new Date()) + 1, year: getYear(new Date()) });
+    setBudgetForm({ category: '', amount: '', month: selectedDate.month, year: selectedDate.year });
     setIsBudgetModalOpen(true);
   };
 
-  const closeBudgetDialog = () => {
-    setIsBudgetModalOpen(false);
-    setBudgetError(null);
+  const openAddCategoryModal = () => {
+    setCurrentCategory(null);
+    setCategoryForm({ name: '', color: '#8884d8' });
+    setIsCategoryModalOpen(true);
   };
 
-  // --- Chart Data Preparation ---
-  const monthlyExpenses = transactions.reduce((acc, transaction) => {
-    const monthYear = format(parseISO(transaction.date), 'MMM yy');
-    acc[monthYear] = (acc[monthYear] || 0) + transaction.amount;
-    return acc;
-  }, {});
+  const handleEditExpense = (exp) => {
+    setCurrentExpense(exp);
+    setExpenseForm({ amount: exp.amount, date: parseISO(exp.date), description: exp.description, categoryId: exp.categoryId?._id });
+    setIsExpenseModalOpen(true);
+  };
+  
+  const handleEditBudget = (b) => {
+    setCurrentBudget(b);
+    setBudgetForm({ category: b.category?._id, amount: b.amount, month: b.month, year: b.year });
+    setIsBudgetModalOpen(true);
+  };
 
-  const barChartData = Object.keys(monthlyExpenses)
-    .map(monthYear => ({
-      name: monthYear,
-      expenses: monthlyExpenses[monthYear],
-    }))
-    .sort((a, b) => new Date(a.name) - new Date(b.name));
-
-  const categoryExpenses = transactions.reduce((acc, transaction) => {
-    const category = categories.find(cat => cat._id === transaction.categoryId);
-    if (category) {
-      acc[category.name] = (acc[category.name] || 0) + transaction.amount;
-    } else {
-      acc['Uncategorized'] = (acc['Uncategorized'] || 0) + transaction.amount;
-    }
-    return acc;
-  }, {});
-
-  const pieChartData = Object.keys(categoryExpenses).map(categoryName => ({
-    name: categoryName,
-    value: categoryExpenses[categoryName],
-    color: categories.find(cat => cat.name === categoryName)?.color || '#CCCCCC'
-  }));
-
-  // Dashboard Summary Cards
-  const totalExpenses = transactions.reduce((sum, t) => sum + t.amount, 0);
-  const mostRecentTransactions = transactions.slice(0, 5);
-
-  // Budget vs Actual Comparison Chart
-  const budgetVsActualData = categories.map(category => {
-    if (!category || typeof category !== 'object' || !category._id) {
-      console.warn("Skipping malformed category entry:", category);
-      return null;
-    }
-
-    const actualSpent = transactions
-      .filter(t => {
-        return t.categoryId && t.categoryId === category._id &&
-               getMonth(parseISO(t.date)) === getMonth(new Date()) &&
-               getYear(parseISO(t.date)) === getYear(new Date());
-      })
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const budgetForCategory = budgets
-      .find(b => {
-        // FIX: Access b.category._id as the backend populates 'category'
-        return b.category && typeof b.category === 'object' && b.category._id === category._id &&
-               b.month === (getMonth(new Date()) + 1) &&
-               b.year === getYear(new Date());
+  const handleEditCategory = (cat) => {
+    setCurrentCategory(cat);
+    setCategoryForm({ name: cat.name, color: cat.color });
+    setIsCategoryModalOpen(true);
+  };
+  
+  const handleApiSubmit = async (url, method, body, callback) => {
+    setError(null);
+    console.log(`🚀 Sending API request: ${method} ${url}`, body);
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
 
-    return {
-      name: category.name,
-      budget: budgetForCategory ? budgetForCategory.amount : 0,
-      actual: actualSpent,
-    };
-  }).filter(Boolean); // Filter out any 'null' entries
+      console.log(`🚦 API Response Status: ${res.status}`);
 
-  // Simple Spending Insights
-  const insights = [];
-  // Using current month and year from new Date()
-  // const currentMonth = getMonth(new Date()) + 1; // Already available from budgetForm initialization
-  // const currentYear = getYear(new Date()); // Already available from budgetForm initialization
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ API Error Response Body:', errorText);
+        setError(`API Error: ${res.statusText} (${res.status}). See console for details.`);
+        return;
+      }
 
-  budgetVsActualData.forEach(item => {
-    if (item.budget > 0 && item.actual > item.budget) {
-      insights.push(`You are $${(item.actual - item.budget).toFixed(2)} over budget for ${item.name} this month.`);
-    } else if (item.budget > 0 && item.actual < item.budget * 0.5) {
-      insights.push(`You've only spent $${item.actual.toFixed(2)} out of your $${item.budget.toFixed(2)} ${item.name} budget this month. Great job saving!`);
-    } else if (item.budget === 0 && item.actual > 0) {
-      insights.push(`You spent $${item.actual.toFixed(2)} on ${item.name} this month without a set budget.`);
+      const data = await res.json();
+      console.log('📦 API Response Data:', data);
+
+      if (data.success) {
+        console.log('✅ Success! Refetching all data.');
+        fetchAllData();
+        callback();
+      } else {
+        console.error('❌ API returned success:false. Message:', data.message);
+        setError(data.message || 'An unknown error occurred.');
+      }
+    } catch (err) {
+      console.error('💥 Uncaught Fetch Error:', err);
+      setError('A network or parsing error occurred. Please check the browser console.');
     }
-  });
+  };
 
+  const handleExpenseSubmit = (e) => { e.preventDefault(); handleApiSubmit(currentExpense ? `/api/expenses/${currentExpense._id}` : '/api/expenses', currentExpense ? 'PUT' : 'POST', { ...expenseForm, amount: parseFloat(expenseForm.amount) }, () => setIsExpenseModalOpen(false)); };
+  const handleBudgetSubmit = (e) => { e.preventDefault(); handleApiSubmit(currentBudget ? `/api/budgets/${currentBudget._id}` : '/api/budgets', currentBudget ? 'PUT' : 'POST', { ...budgetForm, amount: parseFloat(budgetForm.amount) }, () => setIsBudgetModalOpen(false)); };
+  const handleCategorySubmit = (e) => { e.preventDefault(); handleApiSubmit(currentCategory ? `/api/categories/${currentCategory._id}` : '/api/categories', currentCategory ? 'PUT' : 'POST', categoryForm, () => setIsCategoryModalOpen(false)); };
+  const handleEarningSubmit = (e) => { e.preventDefault(); handleApiSubmit('/api/earnings', 'POST', { ...earningForm, amount: parseFloat(earningForm.amount) }, () => setIsEarningModalOpen(false)); };
 
-  if (loading) return <div className="p-8 text-center">Loading data...</div>;
+  const handleDelete = async (type, id) => { if (confirm('Are you sure?')) { await fetch(`/api/${type}/${id}`, { method: 'DELETE' }); fetchAllData(); } };
+  
+  const { monthlyPieChartData, monthlyBudgetVsActualData, monthlyInsights, budgetAlert } = useMemo(() => {
+    const monthlyExpenses = expenses.filter(e => getMonth(parseISO(e.date)) + 1 === selectedDate.month && getYear(parseISO(e.date)) === selectedDate.year);
+    const pieData = Object.values(monthlyExpenses.reduce((acc, e) => {
+      if (e.categoryName !== 'Uncategorized') {
+        if (!acc[e.categoryName]) acc[e.categoryName] = { name: e.categoryName, value: 0, color: categories.find(c => c.name === e.categoryName)?.color || '#CCCCCC' };
+        acc[e.categoryName].value += e.amount;
+      }
+      return acc;
+    }, {}));
+    const budgetVsActual = categories.map(cat => {
+      const actualSpent = monthlyExpenses.filter(e => e.categoryId?._id === cat._id).reduce((sum, e) => sum + e.amount, 0);
+      const budgetForCategory = budgets.find(b => b.category?._id === cat._id && b.month === selectedDate.month && b.year === selectedDate.year);
+      return { name: cat.name, Budget: budgetForCategory?.amount || 0, 'Actual Spent': actualSpent };
+    }).filter(item => item.Budget > 0 || item['Actual Spent'] > 0);
+    const totalBudget = budgetVsActual.reduce((sum, item) => sum + item.Budget, 0);
+    const totalSpent = budgetVsActual.reduce((sum, item) => sum + item['Actual Spent'], 0);
+    
+    const monthlyEarning = earnings.find(e => e.month === selectedDate.month && e.year === selectedDate.year)?.amount || 0;
+    const difference = monthlyEarning - totalSpent;
+    
+    const newBudgetTotal = budgets.filter(b => b.month === budgetForm.month && b.year === budgetForm.year && b.category !== (currentBudget?.category?._id || budgetForm.category)).reduce((sum, b) => sum + b.amount, 0) + (parseFloat(budgetForm.amount) || 0);
+    const budgetAlert = monthlyEarning > 0 && newBudgetTotal > monthlyEarning ? `Warning: Your total budget of $${newBudgetTotal.toFixed(2)} for this month exceeds your earnings of $${monthlyEarning.toFixed(2)}.` : null;
+
+    return { monthlyPieChartData: pieData, monthlyBudgetVsActualData: budgetVsActual, monthlyInsights: { totalBudget, totalSpent, difference, monthlyEarning }, budgetAlert };
+  }, [expenses, budgets, categories, selectedDate, earnings, budgetForm, currentBudget]);
+  
+  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+  if (status === "loading") return <div className="flex items-center justify-center min-h-screen bg-slate-50">Loading...</div>;
+  if (!session) return <div className="flex h-full items-center justify-center bg-slate-100"><Card className="w-full max-w-sm p-8"><CardHeader className="text-center"><CardTitle className="text-2xl">Finance Visualizer</CardTitle></CardHeader><CardContent><Button className="w-full" size="lg" onClick={() => signIn("google")}>Sign in with Google</Button></CardContent></Card></div>;
 
   return (
-    <div className="container mx-auto p-4 md:p-8">
-      <h1 className="text-3xl font-bold mb-6 text-center">Personal Finance Visualizer</h1>
+    <main className="bg-slate-50 min-h-screen">
+      <header className="bg-white border-b sticky top-0 z-10"><div className="container mx-auto p-4 flex justify-between items-center"><h1 className="text-xl font-bold">Finance Dashboard</h1><div><span className="mr-4 text-sm text-slate-600 hidden sm:inline">Welcome, {session.user.name}!</span><Button variant="outline" size="sm" onClick={() => signOut()}>Sign Out</Button></div></div></header>
+      <div className="container mx-auto p-4 md:p-8">
+        {!loading && (
+          <div className="space-y-8">
+            <Card><CardHeader className="flex flex-row justify-between items-center"><CardTitle>Monthly Snapshot</CardTitle><Button variant="outline" onClick={openAddEarningModal}>Set Monthly Earnings</Button></CardHeader><CardContent><div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6"><div className="md:col-span-1"><Label>Month</Label><Select value={String(selectedDate.month)} onValueChange={handleSelectChange(setSelectedDate, 'month')}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent></Select></div><div className="md:col-span-1"><Label>Year</Label><Select value={String(selectedDate.year)} onValueChange={handleSelectChange(setSelectedDate, 'year')}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent></Select></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center p-4 bg-slate-100 rounded-lg"><div className="flex flex-col items-center justify-center"><Landmark className="w-8 h-8 text-slate-500 mb-2"/><p className="text-sm text-muted-foreground">Monthly Earnings</p><p className="text-2xl font-bold">${monthlyInsights.monthlyEarning.toFixed(2)}</p></div><div className="flex flex-col items-center justify-center"><Wallet className="w-8 h-8 text-slate-500 mb-2"/><p className="text-sm text-muted-foreground">Total Spent</p><p className="text-2xl font-bold">${monthlyInsights.totalSpent.toFixed(2)}</p></div><div className={`flex flex-col items-center justify-center rounded-lg p-4 ${monthlyInsights.difference >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{monthlyInsights.difference >= 0 ? <PiggyBank className="w-8 h-8 mb-2"/> : <TrendingDown className="w-8 h-8 mb-2"/>}<p className="text-sm">{monthlyInsights.difference >= 0 ? 'Net Savings' : 'Net Deficit'}</p><p className="text-2xl font-bold">${Math.abs(monthlyInsights.difference).toFixed(2)}</p></div></div></CardContent></Card>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <Card><CardHeader><CardTitle>Expense Breakdown for {months.find(m=>m.value===selectedDate.month)?.label}</CardTitle></CardHeader><CardContent>{monthlyPieChartData.length > 0 ? <ResponsiveContainer width="100%" height={250}><PieChart><Pie data={monthlyPieChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}>{monthlyPieChartData.map((e, i) => <Cell key={`cell-${i}`} fill={e.color} />)}</Pie><Tooltip formatter={(v) => `$${v.toFixed(2)}`}/><Legend formatter={formatCategoryName} /></PieChart></ResponsiveContainer> : <p className="text-center text-slate-500 py-10">No expenses this month.</p>}</CardContent></Card>
+              <Card><CardHeader><CardTitle>Budget vs. Spent for {months.find(m=>m.value===selectedDate.month)?.label}</CardTitle></CardHeader><CardContent>{monthlyBudgetVsActualData.length > 0 ? <ResponsiveContainer width="100%" height={250}><BarChart data={monthlyBudgetVsActualData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tickFormatter={formatCategoryName} /><YAxis /><Tooltip formatter={(v) => `$${v.toFixed(2)}`}/><Legend /><Bar dataKey="Budget" fill="#8884d8" /><Bar dataKey="Actual Spent" fill="#82ca9d" /></BarChart></ResponsiveContainer> : <p className="text-center text-slate-500 py-10">No data for this month.</p>}</CardContent></Card>
+            </div>
 
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <strong className="font-bold">Transaction Error! </strong>
-          <span className="block sm:inline">{error}</span>
-          <span className="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onClick={() => setError(null)}>
-            <svg className="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.697l-2.651 2.652a1.2 1.2 0 1 1-1.697-1.697L8.303 10 5.651 7.348a1.2 1.2 0 1 1 1.697-1.697L10 8.303l2.651-2.652a1.2 1.2 0 0 1 1.697 1.697L11.697 10l2.652 2.651a1.2 1.2 0 0 1 0 1.698z"/></svg>
-          </span>
-        </div>
-      )}
-        {budgetError && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <strong className="font-bold">Budget Error! </strong>
-          <span className="block sm:inline">{budgetError}</span>
-          <span className="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onClick={() => setBudgetError(null)}>
-            <svg className="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.697l-2.651 2.652a1.2 1.2 0 1 1-1.697-1.697L8.303 10 5.651 7.348a1.2 1.2 0 1 1 1.697-1.697L10 8.303l2.651-2.652a1.2 1.2 0 0 1 1.697 1.697L11.697 10l2.652 2.651a1.2 1.2 0 0 1 0 1.698z"/></svg>
-          </span>
-        </div>
-      )}
-
-      {/* Dashboard Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              className="h-4 w-4 text-muted-foreground"
-            >
-              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-            </svg>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">${totalExpenses.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">Across all recorded transactions</p>
-          </CardContent>
-        </Card>
-
-        <Card className="col-span-1 md:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Category Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent>
-                {pieChartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={150}>
-                        <PieChart>
-                            <Pie
-                                data={pieChartData}
-                                cx="50%"
-                                cy="50%"
-                                outerRadius={60}
-                                fill="#8884d8"
-                                dataKey="value"
-                                labelLine={false}
-                                // --- MODIFIED: Pie label to use formatter ---
-                                label={({ name, percent }) => `${formatCategoryName(name)} ${(percent * 100).toFixed(0)}%`}
-                                // --- END MODIFIED ---
-                            >
-                                {pieChartData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                            </Pie>
-                            <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-                            {/* --- MODIFIED: Legend formatter --- */}
-                            <Legend layout="vertical" verticalAlign="middle" align="right" formatter={formatCategoryName} />
-                            {/* --- END MODIFIED --- */}
-                        </PieChart>
-                    </ResponsiveContainer>
-                ) : (
-                    <p className="text-center text-gray-500 text-sm">No category data to display pie chart.</p>
-                )}
-            </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-        {/* Monthly Expenses Bar Chart */}
-        <div className="p-6 border rounded-lg shadow-sm">
-          <h2 className="text-2xl font-semibold mb-4">Monthly Expenses</h2>
-          {barChartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={barChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  // --- ADDED: tickFormatter for category shortcuts ---
-                  tickFormatter={formatCategoryName}
-                  angle={-45} // Optional: Angle labels for better readability
-                  textAnchor="end" // Optional: Adjust text alignment for angled labels
-                  height={60} // Optional: Adjust height to accommodate angled labels
-                  // --- END ADDED ---
-                />
-                <YAxis />
-                <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-                <Bar dataKey="expenses" fill="#8884d8" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-center text-gray-500">No transaction data to display chart.</p>
-          )}
-        </div>
-
-        {/* Budget vs Actual Comparison Chart */}
-        <div className="p-6 border rounded-lg shadow-sm">
-          <h2 className="text-2xl font-semibold mb-4">Budget vs Actual (This Month)</h2>
-          {budgetVsActualData.filter(item => item.budget > 0 || item.actual > 0).length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={budgetVsActualData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="name"
-                  tickFormatter={formatCategoryName}
-                  angle={-45}
-                  textAnchor="end"
-                  height={60}
-                />
-                <YAxis />
-                <Tooltip
-                  // --- MODIFIED LINE BELOW: Corrected formatter logic ---
-                  formatter={(value, name) => [`$${value.toFixed(2)}`, name === 'budget' ? 'Budget' : name === 'actual' ? 'Actual Spent' : name]}
-                  // --- END MODIFIED ---
-                  labelFormatter={formatCategoryName}
-                />
-                <Legend />
-                <Bar dataKey="budget" fill="#82ca9d" name="Budget" />
-                <Bar dataKey="actual" fill="#ffc658" name="Actual Spent" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-center text-gray-500">No budget or spending data for this month to display chart.</p>
-          )}
-        </div>
-      </div>
-
-      {/* Simple Spending Insights */}
-      <div className="p-6 border rounded-lg shadow-sm mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Spending Insights (This Month)</h2>
-        {insights.length > 0 ? (
-          <ul className="list-disc list-inside space-y-2">
-            {insights.map((insight, index) => (
-              <li key={index} className="text-gray-700">{insight}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-center text-gray-500">No specific insights for this month yet. Keep tracking your expenses!</p>
+            <section><div className="flex justify-between items-center mb-4"><h2 className="text-2xl font-bold tracking-tight text-slate-800">All Expenses (Total: ${totalExpenses.toFixed(2)})</h2><Button onClick={openAddExpenseModal}>Add Expense</Button></div><Card><CardContent className="p-0">{expenses.length > 0 ? <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead>Category</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{expenses.map(e => <TableRow key={e._id}><TableCell>{format(parseISO(e.date), 'PPP')}</TableCell><TableCell>{e.description}</TableCell><TableCell>{e.categoryName}</TableCell><TableCell className="text-right">${e.amount.toFixed(2)}</TableCell><TableCell className="text-right"><Button variant="outline" size="sm" className="mr-2" onClick={() => handleEditExpense(e)}>Edit</Button><Button variant="destructive" size="sm" onClick={() => handleDelete( 'expenses', e._id)}>Delete</Button></TableCell></TableRow>)}</TableBody></Table> : <p className="p-6 text-center text-gray-500">No expenses recorded yet.</p>}</CardContent></Card></section>
+            
+            <section className="space-y-4"><div className="flex justify-between items-center"><h2 className="text-2xl font-bold tracking-tight text-slate-800">All Monthly Budgets</h2><Button onClick={openAddBudgetModal}>Set Budget</Button></div><Card><CardContent className="p-0">{budgets.length > 0 ? <Table><TableHeader><TableRow><TableHead>Category</TableHead><TableHead>Month</TableHead><TableHead>Year</TableHead><TableHead className="text-right">Budget</TableHead><TableHead className="text-right">Spent</TableHead><TableHead>Progress</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{budgets.map(b => { if (!b.category) return null; const spent = expenses.filter(e => e.categoryId?._id === b.category._id && getMonth(parseISO(e.date)) + 1 === b.month && getYear(parseISO(e.date)) === b.year).reduce((s, e) => s + e.amount, 0); const pct = b.amount > 0 ? (spent / b.amount) * 100 : 0; return ( <TableRow key={b._id}><TableCell>{b.category.name}</TableCell><TableCell>{months.find(m=>m.value===b.month)?.label}</TableCell><TableCell>{b.year}</TableCell><TableCell className="text-right">${b.amount.toFixed(2)}</TableCell><TableCell className="text-right">${spent.toFixed(2)}</TableCell><TableCell className="w-[120px]"><Progress value={Math.min(pct, 100)} className={pct > 100 ? "bg-red-500" : ""} /><span className="text-xs ml-2">{pct.toFixed(0)}%</span></TableCell><TableCell className="text-right"><Button variant="outline" size="sm" className="mr-2" onClick={() => handleEditBudget(b)}>Edit</Button><Button variant="destructive" size="sm" onClick={() => handleDelete('budgets', b._id)}>Delete</Button></TableCell></TableRow> ); }).filter(Boolean)}</TableBody></Table> : <p className="p-6 text-center text-gray-500">No budgets set yet.</p>}</CardContent></Card></section>
+            
+            <section className="space-y-4"><div className="flex justify-between items-center"><h2 className="text-2xl font-bold tracking-tight text-slate-800">Manage Categories</h2><Button onClick={openAddCategoryModal}>Add Category</Button></div><Card><CardContent className="p-0">{categories.length > 0 ? <Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Color</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{categories.map(cat => <TableRow key={cat._id}><TableCell>{cat.name}</TableCell><TableCell><div className="w-6 h-6 rounded-full border" style={{ backgroundColor: cat.color }}></div></TableCell><TableCell className="text-right"><Button variant="outline" size="sm" className="mr-2" onClick={() => handleEditCategory(cat)}>Edit</Button><Button variant="destructive" size="sm" onClick={() => handleDelete('categories', cat._id)}>Delete</Button></TableCell></TableRow>)}</TableBody></Table> : <p className="p-6 text-center text-gray-500">No categories created yet.</p>}</CardContent></Card></section>
+          </div>
         )}
+        
+        {/* Modals */}
+        <Dialog open={isEarningModalOpen} onOpenChange={() => setIsEarningModalOpen(false)}><DialogContent><DialogHeader><DialogTitle>Set Earnings for {months.find(m=>m.value===earningForm.month)?.label} {earningForm.year}</DialogTitle></DialogHeader><form onSubmit={handleEarningSubmit} className="grid gap-4 py-4"><div className="grid grid-cols-4 items-center gap-4"><Label htmlFor="earning-amount" className="text-right">Amount</Label><Input id="earning-amount" name="amount" type="number" value={earningForm.amount} onChange={handleFormChange(setEarningForm)} required className="col-span-3"/></div><DialogFooter><Button type="submit">Save Earnings</Button></DialogFooter></form></DialogContent></Dialog>
+        <Dialog open={isCategoryModalOpen} onOpenChange={() => setIsCategoryModalOpen(false)}><DialogContent><DialogHeader><DialogTitle>{currentCategory ? 'Edit' : 'Add'} Category</DialogTitle></DialogHeader><form onSubmit={handleCategorySubmit} className="grid gap-4 py-4"><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Name</Label><Input name="name" value={categoryForm.name} onChange={handleFormChange(setCategoryForm)} className="col-span-3" required /></div><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Color</Label><Input name="color" type="color" value={categoryForm.color} onChange={handleFormChange(setCategoryForm)} className="col-span-3" /></div><DialogFooter><Button type="submit">Save</Button></DialogFooter></form></DialogContent></Dialog>
+        <Dialog open={isExpenseModalOpen} onOpenChange={() => setIsExpenseModalOpen(false)}><DialogContent><DialogHeader><DialogTitle>{currentExpense ? 'Edit' : 'Add'} Expense</DialogTitle></DialogHeader><form onSubmit={handleExpenseSubmit} className="grid gap-4 py-4"><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Amount</Label><Input name="amount" type="number" value={expenseForm.amount} onChange={handleFormChange(setExpenseForm)} required className="col-span-3"/></div><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Date</Label><Popover><PopoverTrigger asChild><Button variant="outline" className={cn("col-span-3", !expenseForm.date && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{expenseForm.date ? format(expenseForm.date, "PPP") : "Pick date"}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={expenseForm.date} onSelect={handleDateChange(setExpenseForm, 'date')} /></PopoverContent></Popover></div><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Category</Label><Select onValueChange={handleSelectChange(setExpenseForm, 'categoryId')} value={expenseForm.categoryId}><SelectTrigger className="col-span-3"><SelectValue placeholder="Select category" /></SelectTrigger><SelectContent>{categories.map(c => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}</SelectContent></Select></div><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Description</Label><Input name="description" value={expenseForm.description} onChange={handleFormChange(setExpenseForm)} className="col-span-3"/></div><DialogFooter><Button type="submit">Save</Button></DialogFooter></form></DialogContent></Dialog>
+        <Dialog open={isBudgetModalOpen} onOpenChange={() => setIsBudgetModalOpen(false)}><DialogContent><DialogHeader><DialogTitle>{currentBudget ? 'Edit' : 'Set'} Budget</DialogTitle></DialogHeader><form onSubmit={handleBudgetSubmit} className="grid gap-4 py-4">{budgetAlert && <div className="col-span-4 flex items-center gap-2 rounded-md bg-yellow-100 p-3 text-sm text-yellow-800"><AlertTriangle className="h-4 w-4" />{budgetAlert}</div>}<div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Category</Label><Select onValueChange={handleSelectChange(setBudgetForm, 'category')} value={budgetForm.category}><SelectTrigger className="col-span-3"><SelectValue placeholder="Select category" /></SelectTrigger><SelectContent>{categories.map(c => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}</SelectContent></Select></div><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Amount</Label><Input name="amount" type="number" value={budgetForm.amount} onChange={handleFormChange(setBudgetForm)} required className="col-span-3"/></div><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Month</Label><Select onValueChange={handleSelectChange(setBudgetForm, 'month')} value={String(budgetForm.month)}><SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger><SelectContent>{months.map(m => <SelectItem key={m.value} value={String(m.value)}>{m.label}</SelectItem>)}</SelectContent></Select></div><div className="grid grid-cols-4 items-center gap-4"><Label className="text-right">Year</Label><Select onValueChange={handleSelectChange(setBudgetForm, 'year')} value={String(budgetForm.year)}><SelectTrigger className="col-span-3"><SelectValue /></SelectTrigger><SelectContent>{years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent></Select></div><DialogFooter><Button type="submit">Save</Button></DialogFooter></form></DialogContent></Dialog>
       </div>
-
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-semibold">Transactions</h2>
-        <Button onClick={openAddTransactionModal}>Add New Transaction</Button>
-      </div>
-
-      <div className="border rounded-lg overflow-hidden shadow-sm mb-8">
-        {transactions.length > 0 ? (
-          <Table>
-            <TableHeader>
-              {/* COMPRESSED: Removed whitespace between TableHead tags */}
-              <TableRow><TableHead>Date</TableHead><TableHead>Description</TableHead><TableHead>Category</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Actions</TableHead></TableRow>
-            </TableHeader>
-            <TableBody>
-              {transactions.map((transaction) => (
-                // COMPRESSED: Removed whitespace between TableCell tags
-                <TableRow key={transaction._id}><TableCell>{format(parseISO(transaction.date), 'PPP')}</TableCell><TableCell>{transaction.description}</TableCell><TableCell>{transaction.categoryName}</TableCell><TableCell className="text-right">${transaction.amount.toFixed(2)}</TableCell><TableCell className="text-right">
-                    <Button variant="outline" size="sm" className="mr-2" onClick={() => handleEditTransaction(transaction)}>Edit</Button>
-                    <Button variant="destructive" size="sm" onClick={() => handleDeleteTransaction(transaction._id)}>Delete</Button>
-                  </TableCell></TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <p className="p-4 text-center text-gray-500">No transactions recorded yet. Add one to get started!</p>
-        )}
-      </div>
-
-      {/* Budget Management Section */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-semibold">Monthly Budgets</h2>
-        <Button onClick={openAddBudgetModal}>Set New Budget</Button>
-      </div>
-
-      <div className="border rounded-lg overflow-hidden shadow-sm">
-        {budgets.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow><TableHead>Category</TableHead><TableHead>Month</TableHead><TableHead>Year</TableHead><TableHead className="text-right">Budget Amount</TableHead><TableHead className="text-right">Actual Spent (This Month)</TableHead><TableHead className="text-right">Progress</TableHead><TableHead className="text-right">Actions</TableHead></TableRow>
-              </TableHeader>
-              <TableBody>
-                {budgets.map((budget) => {
-                  // Defensive check: if budget.category is not an object or missing _id, skip
-                  if (!budget.category || typeof budget.category !== 'object' || !budget.category._id) {
-                    console.warn("Skipping malformed budget entry (missing populated category):", budget);
-                    return null; // Return null for malformed entries
-                  }
-
-                  const actualSpent = transactions
-                  .filter(t => t.categoryId === budget.category._id && // FIX: Use budget.category._id
-                  getMonth(parseISO(t.date)) + 1 === budget.month &&
-                  getYear(parseISO(t.date)) === budget.year)
-                  .reduce((sum, t) => sum + t.amount, 0);
-
-                  const percentage = budget.amount > 0 ? (actualSpent / budget.amount) * 100 : (actualSpent > 0 ? 100 : 0);
-                  const progressColor = percentage > 100 ? "bg-red-500" : "bg-primary";
-
-                  return (
-                    // FIX: Compressed TableRow content to remove whitespace causing hydration errors
-                    <TableRow key={budget._id}><TableCell>{budget.category.name}</TableCell><TableCell>{months.find(m => m.value === budget.month)?.label}</TableCell><TableCell>{budget.year}</TableCell><TableCell className="text-right">${budget.amount.toFixed(2)}</TableCell><TableCell className="text-right">${actualSpent.toFixed(2)}</TableCell><TableCell className="w-[120px]"><Progress value={Math.min(percentage, 100)} className={progressColor} /><span className="text-xs text-gray-500">{percentage.toFixed(0)}%</span></TableCell><TableCell className="text-right">
-                        <Button variant="outline" size="sm" className="mr-2" onClick={() => handleEditBudget(budget)}>Edit</Button>
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteBudget(budget._id)}>Delete</Button>
-                      </TableCell></TableRow>
-                  );
-                }).filter(Boolean)} {/* Filter out any 'null' entries */}
-              </TableBody>
-          </Table>
-        ) : ( <p className="p-4 text-center text-gray-500">No budgets set yet. Set one to start tracking!</p> )}
-      </div>
-
-      {/* Transaction Modal */}
-      <Dialog open={isTransactionModalOpen} onOpenChange={closeTransactionDialog}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>{currentTransaction ? 'Edit Transaction' : 'Add New Transaction'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleTransactionSubmit} className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="amount" className="text-right">Amount</Label>
-              <Input
-                id="amount"
-                name="amount"
-                type="number"
-                step="0.01"
-                value={transactionForm.amount}
-                onChange={handleTransactionChange}
-                required
-                className="col-span-3"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="date" className="text-right">Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "col-span-3 justify-start text-left font-normal",
-                      !transactionForm.date && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {transactionForm.date ? format(transactionForm.date, "PPP") : <span>Pick a date</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={transactionForm.date}
-                    onSelect={handleTransactionDateChange}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="category" className="text-right">Category</Label>
-              <Select onValueChange={handleTransactionCategoryChange} value={transactionForm.categoryId} required>
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map(category => (
-                    <SelectItem key={category._id} value={category._id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="description" className="text-right">Description</Label>
-              <Input
-                id="description"
-                name="description"
-                value={transactionForm.description}
-                onChange={handleTransactionChange}
-                className="col-span-3"
-              />
-            </div>
-            <DialogFooter>
-              <Button type="submit">{currentTransaction ? 'Save Changes' : 'Add Transaction'}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Budget Modal */}
-      <Dialog open={isBudgetModalOpen} onOpenChange={closeBudgetDialog}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>{currentBudget ? 'Edit Budget' : 'Set New Monthly Budget'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleBudgetSubmit} className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="budgetCategory" className="text-right">Category</Label>
-              <Select onValueChange={handleBudgetCategoryChange} value={budgetForm.category} required>
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map(category => (
-                    <SelectItem key={category._id} value={category._id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="budgetAmount" className="text-right">Budget Amount</Label>
-              <Input
-                id="budgetAmount"
-                name="amount"
-                type="number"
-                step="0.01"
-                value={budgetForm.amount}
-                onChange={handleBudgetChange}
-                required
-                className="col-span-3"
-              />
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="budgetMonth" className="text-right">Month</Label>
-              <Select onValueChange={handleBudgetMonthChange} value={String(budgetForm.month)} required>
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select month" />
-                </SelectTrigger>
-                <SelectContent>
-                  {months.map(month => (
-                    <SelectItem key={month.value} value={String(month.value)}>
-                      {month.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="budgetYear" className="text-right">Year</Label>
-              <Select onValueChange={handleBudgetYearChange} value={String(budgetForm.year)} required>
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {years.map(year => (
-                    <SelectItem key={year} value={String(year)}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button type="submit">{currentBudget ? 'Save Changes' : 'Set Budget'}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+    </main>
   );
 }
+
+

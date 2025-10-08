@@ -1,3 +1,4 @@
+// app\api\envtest\route.js
 export async function GET() {
   console.log("🔍 ENV MONGODB_URI:", process.env.MONGODB_URI);
   return new Response(JSON.stringify({

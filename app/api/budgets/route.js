@@ -1,32 +1,41 @@
-// app/api/budgets/route.js
-
+// File Path: app/api/budgets/route.js
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import dbConnect from '../../../lib/dbConnect';
+import Budget from '../../../models/Budget';
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/dbConnect';
-import Budget from '@/models/Budget';
-// Category model is not strictly needed here if just populating, but good to keep if schema validation indirectly uses it.
-// import Category from '@/models/Category'; 
 
-export async function GET() {
-  try {
+async function getSession() {
+  return await getServerSession(authOptions);
+}
+
+export async function GET(request) {
+    const session = await getSession();
+    if (!session?.user?.id) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
     await dbConnect();
-    // Ensure 'category' is populated so frontend gets the full category object
-    const budgets = await Budget.find({}).populate('category'); 
-    return NextResponse.json({ success: true, data: budgets });
-  } catch (error) {
-    console.error("Error fetching budgets:", error);
-    return NextResponse.json({ success: false, message: "Failed to fetch budgets.", error: error.message }, { status: 500 });
-  }
+    try {
+        const budgets = await Budget.find({ userId: session.user.id }).populate('category');
+        return NextResponse.json({ success: true, data: budgets });
+    } catch (error) {
+        return NextResponse.json({ success: false, message: 'Failed to fetch budgets.' }, { status: 400 });
+    }
 }
 
 export async function POST(request) {
-  try {
+    const session = await getSession();
+    if (!session?.user?.id) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
     await dbConnect();
-    const body = await request.json();
-    // Assuming 'category' field in body is the Category's _id
-    const newBudget = await Budget.create(body);
-    return NextResponse.json({ success: true, data: newBudget }, { status: 201 });
-  } catch (error) {
-    console.error("Error creating budget:", error);
-    return NextResponse.json({ success: false, message: "Failed to create budget.", error: error.message }, { status: 500 });
-  }
+    try {
+        const body = await request.json();
+        const budgetData = { ...body, userId: session.user.id };
+        const budget = await Budget.create(budgetData);
+        return NextResponse.json({ success: true, data: budget }, { status: 201 });
+    } catch (error) {
+        return NextResponse.json({ success: false, message: 'Failed to create budget.' }, { status: 400 });
+    }
 }
+

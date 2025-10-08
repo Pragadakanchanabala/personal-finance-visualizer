@@ -1,59 +1,50 @@
-// app/api/budgets/[id]/route.js
-
+// File Path: app/api/budgets/[id]/route.js
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import dbConnect from '../../../../lib/dbConnect';
+import Budget from '../../../../models/Budget';
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/dbConnect';
-import Budget from '@/models/Budget';
 
-export async function GET(request, { params }) {
-  try {
-    await dbConnect();
-    const { id } = params; // Get ID from dynamic route segment
-    const budget = await Budget.findById(id).populate('category'); // Populate for single fetch too
-    
-    if (!budget) {
-      return NextResponse.json({ success: false, message: "Budget not found." }, { status: 404 });
-    }
-    return NextResponse.json({ success: true, data: budget });
-  } catch (error) {
-    console.error("Error fetching single budget:", error);
-    return NextResponse.json({ success: false, message: "Failed to fetch budget.", error: error.message }, { status: 500 });
-  }
+async function getSession() {
+    return await getServerSession(authOptions);
 }
 
 export async function PUT(request, { params }) {
-  try {
+    const session = await getSession();
+    if (!session?.user?.id) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
+    }
     await dbConnect();
-    const { id } = params; // Get ID from dynamic route segment
-    
-    const body = await request.json();
-    const updatedBudget = await Budget.findByIdAndUpdate(id, body, { new: true, runValidators: true }); // Add runValidators for schema validation
-    
-    if (!updatedBudget) {
-      return NextResponse.json({ success: false, message: "Budget not found." }, { status: 404 });
+    try {
+        const body = await request.json();
+        const budget = await Budget.findOneAndUpdate(
+            { _id: params.id, userId: session.user.id },
+            body,
+            { new: true, runValidators: true }
+        );
+        if (!budget) {
+            return NextResponse.json({ success: false, message: 'Budget not found or unauthorized.' }, { status: 404 });
+        }
+        return NextResponse.json({ success: true, data: budget });
+    } catch (error) {
+        return NextResponse.json({ success: false, message: 'Failed to update budget.' }, { status: 400 });
     }
-    return NextResponse.json({ success: true, data: updatedBudget });
-  } catch (error) {
-    console.error("Error updating budget:", error);
-    if (error.name === 'ValidationError') {
-        const errors = Object.values(error.errors).map(err => err.message);
-        return NextResponse.json({ success: false, message: errors.join(', ') }, { status: 400 });
-    }
-    return NextResponse.json({ success: false, message: "Failed to update budget.", error: error.message }, { status: 500 });
-  }
 }
 
 export async function DELETE(request, { params }) {
-  try {
-    await dbConnect();
-    const { id } = params; // Get ID from dynamic route segment
-
-    const deletedBudget = await Budget.findByIdAndDelete(id); // Use findByIdAndDelete directly
-    if (!deletedBudget) {
-      return NextResponse.json({ success: false, message: "Budget not found." }, { status: 404 });
+    const session = await getSession();
+    if (!session?.user?.id) {
+        return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 });
     }
-    return NextResponse.json({ success: true, message: "Budget deleted successfully." }, { status: 200 });
-  } catch (error) {
-    console.error("Error deleting budget:", error);
-    return NextResponse.json({ success: false, message: "Failed to delete budget.", error: error.message }, { status: 500 });
-  }
+    await dbConnect();
+    try {
+        const deletedBudget = await Budget.deleteOne({ _id: params.id, userId: session.user.id });
+        if (deletedBudget.deletedCount === 0) {
+            return NextResponse.json({ success: false, message: 'Budget not found or unauthorized.' }, { status: 404 });
+        }
+        return NextResponse.json({ success: true, message: 'Budget deleted successfully.' });
+    } catch (error) {
+        return NextResponse.json({ success: false, message: 'Failed to delete budget.' }, { status: 400 });
+    }
 }
+
